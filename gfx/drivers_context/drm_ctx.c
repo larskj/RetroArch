@@ -40,6 +40,9 @@
 #include "../../runloop.h"
 #include "../common/drm_common.h"
 
+#include <unistd.h>
+#include <sched.h>
+
 #ifdef HAVE_EGL
 #include "../common/egl_common.h"
 #endif
@@ -371,6 +374,37 @@ static void gfx_ctx_drm_destroy_resources(gfx_ctx_drm_data_t *drm)
    g_next_bo           = NULL;
 }
 
+static void set_to_sched_fifo_max_prio(void)
+{
+   struct sched_param param = {0};
+
+   // Set highest possible priority for task
+   param.sched_priority = sched_get_priority_max(SCHED_FIFO);
+   if (sched_setscheduler(0, SCHED_FIFO, &param) < 0)
+      RARCH_ERR("[KMS/EGL]: Failed to set SCHED_FIFO priority.\n");
+
+   int sched = sched_getscheduler(getpid());
+
+   const char *scheduler;
+   switch (sched)
+   {
+      case SCHED_OTHER:
+         scheduler = "SCHED_OTHER";
+         break;
+
+      case SCHED_FIFO:
+         scheduler = "SCHED_FIFO";
+         break;
+
+      default:
+         scheduler = "Unrelated";
+   }
+
+   RARCH_LOG("[KMS/EGL]: Current scheduler: %s\n", scheduler);
+   if (sched == SCHED_FIFO)
+      RARCH_LOG("[KMS/EGL]: SCHED_FIFO prio: %d\n", param.sched_priority);
+}
+
 static void *gfx_ctx_drm_init(void *video_driver)
 {
    int fd, i;
@@ -383,6 +417,8 @@ static void *gfx_ctx_drm_init(void *video_driver)
 
    if (!drm)
       return NULL;
+
+   set_to_sched_fifo_max_prio();
 
    fd   = -1;
    gpu_descriptors = dir_list_new("/dev/dri", NULL, false, false);
